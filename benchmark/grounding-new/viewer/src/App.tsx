@@ -95,7 +95,8 @@ function ModelCards({
               calls,
             } = profiling;
             if (
-              !reference ||
+              !reference?.pricing ||
+              !reference.performance ||
               input === undefined ||
               !Number.isFinite(input) ||
               input <= 0 ||
@@ -112,13 +113,17 @@ function ModelCards({
             }
             const inputCost = input * reference.pricing.inputPerToken;
             const outputCost = output * reference.pricing.outputPerToken;
+            const currencyPerUsd =
+              reference.pricing.currency === 'CNY'
+                ? reference.pricing.usdExchangeRate.cnyPerUsd
+                : 1;
             return [
               {
                 durationMs:
                   calls * reference.performance.timeToFirstTokenMs +
                   (1000 * Math.max(output - calls, 0)) /
                     reference.performance.outputTokensPerSecond,
-                cost: inputCost + outputCost,
+                cost: (inputCost + outputCost) / currencyPerUsd,
               },
             ];
           });
@@ -146,33 +151,40 @@ function ModelCards({
               estimates.map(({ durationMs }) => durationMs),
             ),
             estimatedCost: summarize(estimates.map(({ cost }) => cost)),
+            unavailableReason: !reference
+              ? 'Missing pricing and performance data'
+              : modelResults.every(({ output }) => output.type === 'ERROR')
+                ? 'All requests failed; no valid token usage'
+                : 'No valid token usage',
             first: modelResults[0],
           };
         }),
     [results],
   );
 
-  const performancePoints = modelSummaries.flatMap(
-    ({ model, count, passed, estimatedDuration, estimatedCost }) =>
+  const performanceModels = modelSummaries.map(
+    ({
+      model,
+      count,
+      passed,
+      estimatedDuration,
+      estimatedCost,
+      unavailableReason,
+    }) =>
       estimatedDuration.geometricMean !== null &&
       estimatedCost.geometricMean !== null
-        ? [
-            {
-              model,
-              speed:
-                passed / count / (estimatedDuration.geometricMean / 60_000),
-              costEfficiency: passed / count / estimatedCost.geometricMean,
-            },
-          ]
-        : [],
+        ? {
+            model,
+            speed: passed / count / (estimatedDuration.geometricMean / 60_000),
+            costEfficiency: passed / count / estimatedCost.geometricMean,
+            unavailableReason: null,
+          }
+        : { model, speed: null, costEfficiency: null, unavailableReason },
   );
 
   return modelSummaries.length ? (
     <>
-      <ModelPerformanceChart
-        points={performancePoints}
-        modelCount={modelSummaries.length}
-      />
+      <ModelPerformanceChart models={performanceModels} />
       <div className="model-grid">
         {modelSummaries.map(
           ({
@@ -279,28 +291,64 @@ function ModelCards({
                   Duration and cost estimates are calculated per test case
                   before averaging.
                 </p>
-                {reference ? (
+                {reference?.pricing && reference.performance ? (
                   <>
                     <p>
-                      Performance: {reference.source} best P50 · TTFT{' '}
+                      Performance: {reference.source}{' '}
+                      {reference.performance.basis === 'best-per-metric'
+                        ? 'best P50'
+                        : 'benchmark mean'}{' '}
+                      · TTFT{' '}
                       {(
                         reference.performance.timeToFirstTokenMs / 1000
                       ).toFixed(2)}{' '}
-                      s · {reference.performance.outputTokensPerSecond} tokens/s
-                      ({reference.observedAt.slice(0, 10)})
+                      s ·{' '}
+                      {reference.performance.outputTokensPerSecond.toLocaleString(
+                        'en-US',
+                        { maximumFractionDigits: 2 },
+                      )}{' '}
+                      tokens/s ({reference.observedAt.slice(0, 10)})
                     </p>
                     <p>
-                      Pricing: OpenRouter listed rates · Input $
-                      {reference.pricing.inputPerToken * 1_000_000} / Output $
+                      Pricing: {reference.source}{' '}
+                      {reference.pricing.basis === 'model-page-header'
+                        ? 'listed rates'
+                        : 'standard online inference'}{' '}
+                      · Input {reference.pricing.currency === 'CNY' ? '¥' : '$'}
+                      {reference.pricing.inputPerToken * 1_000_000} / Output{' '}
+                      {reference.pricing.currency === 'CNY' ? '¥' : '$'}
                       {reference.pricing.outputPerToken * 1_000_000} per million
                       tokens
                     </p>
+                    {reference.pricing.currency === 'CNY' && (
+                      <p>
+                        Converted to USD at ¥
+                        {reference.pricing.usdExchangeRate.cnyPerUsd} per $1 ·{' '}
+                        {reference.pricing.usdExchangeRate.source} (
+                        {reference.pricing.usdExchangeRate.quotedAt.slice(
+                          0,
+                          10,
+                        )}
+                        ).
+                      </p>
+                    )}
+                    {reference.performance.basis === 'window-mean' ? (
+                      <p>
+                        Ark leaderboard: {reference.performance.conditions}.
+                        Throughput is derived from mean time per output token.
+                        These reference values are not guaranteed and use a
+                        different basis from OpenRouter best P50.
+                      </p>
+                    ) : (
+                      <p>
+                        Best P50 values are selected independently and may come
+                        from different providers.
+                      </p>
+                    )}
                     <p>
-                      Best P50 values are selected independently and may come
-                      from different providers. Costs exclude cache discounts
-                      and long-context surcharges. Duration estimates use all
-                      output tokens; reasoning time may overlap with time to
-                      first token.
+                      Costs exclude cache discounts and long-context surcharges.
+                      Duration estimates use all output tokens; reasoning time
+                      may overlap with time to first token.
                     </p>
                   </>
                 ) : (

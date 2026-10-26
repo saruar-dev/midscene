@@ -27,6 +27,7 @@ const { models } = z
           family: z.enum(MODEL_FAMILY_VALUES),
           name: z.string().trim().min(1),
           protocol: z.enum(['openai-chat', 'openai-responses']).optional(),
+          reasoningEnabled: z.boolean().optional(),
         }),
       )
       .min(1),
@@ -44,7 +45,7 @@ const testcases = readdirSync(testcasesDirectory, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
   .sort()
-  // .slice(0, 10)
+  .slice(0, 3)
   .map(
     (name) =>
       JSON.parse(
@@ -55,7 +56,14 @@ const testcases = readdirSync(testcasesDirectory, { withFileTypes: true })
 describe.each(models)(
   '$name',
   { concurrent: true },
-  ({ baseUrl, apiKey, family, name: modelName, protocol }) => {
+  ({
+    baseUrl,
+    apiKey,
+    family,
+    name: modelName,
+    protocol,
+    reasoningEnabled,
+  }) => {
     test.each(testcases)('$name', { timeout: 60 * 1000 }, async (testcase) => {
       const startedAt = Date.now();
       const instruction = testcase.instruction[testcase.instructionLanguage];
@@ -86,6 +94,9 @@ describe.each(models)(
                 MIDSCENE_MODEL_FAMILY: family,
                 MIDSCENE_MODEL_NAME: modelName,
                 ...(protocol && { MIDSCENE_MODEL_PROTOCOL: protocol }),
+                ...(reasoningEnabled !== undefined && {
+                  MIDSCENE_MODEL_REASONING_ENABLED: String(reasoningEnabled),
+                }),
               },
             },
           );

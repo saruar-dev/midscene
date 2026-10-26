@@ -343,8 +343,11 @@ select {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.model-performance-legend button:hover {
+.model-performance-legend button:hover:not(:disabled) {
   background: #edf4ff;
+}
+.model-performance-legend button:disabled {
+  opacity: 1;
 }
 .model-performance-legend button[aria-pressed="false"] {
   opacity: 0.45;

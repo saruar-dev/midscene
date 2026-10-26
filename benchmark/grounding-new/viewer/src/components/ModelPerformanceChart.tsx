@@ -23,18 +23,22 @@ const colors = [
 ];
 
 export function ModelPerformanceChart({
-  points,
-  modelCount,
+  models,
 }: {
-  points: {
+  models: {
     model: string;
-    speed: number;
-    costEfficiency: number;
+    speed: number | null;
+    costEfficiency: number | null;
+    unavailableReason: string | null;
   }[];
-  modelCount: number;
 }) {
   const [hiddenModels, setHiddenModels] = useState<string[]>([]);
   const [highlightedModel, setHighlightedModel] = useState<string | null>(null);
+  const points = models.flatMap(({ model, speed, costEfficiency }) =>
+    speed !== null && costEfficiency !== null
+      ? [{ model, speed, costEfficiency }]
+      : [],
+  );
   const visiblePoints = points.filter(
     ({ model }) => !hiddenModels.includes(model),
   );
@@ -160,7 +164,13 @@ export function ModelPerformanceChart({
                   {visiblePoints.map((point) => (
                     <Cell
                       key={point.model}
-                      fill={colors[points.indexOf(point) % colors.length]}
+                      fill={
+                        colors[
+                          models.findIndex(
+                            ({ model }) => model === point.model,
+                          ) % colors.length
+                        ]
+                      }
                       opacity={
                         highlightedModel && highlightedModel !== point.model
                           ? 0.25
@@ -169,7 +179,9 @@ export function ModelPerformanceChart({
                     />
                   ))}
                   <LabelList
-                    dataKey="model"
+                    dataKey={({ model }) =>
+                      model === highlightedModel ? model : ''
+                    }
                     position="top"
                     offset={14}
                     fill="#526176"
@@ -185,61 +197,82 @@ export function ModelPerformanceChart({
               </p>
             )}
           </div>
-          <ul className="model-performance-legend">
-            {points.map(({ model, speed, costEfficiency }, index) => (
-              <li key={model}>
-                <button
-                  type="button"
-                  aria-pressed={!hiddenModels.includes(model)}
-                  aria-label={`${hiddenModels.includes(model) ? 'Show' : 'Hide'} ${model} on chart`}
-                  onClick={() => {
-                    setHiddenModels((models) =>
-                      models.includes(model)
-                        ? models.filter((name) => name !== model)
-                        : [...models, model],
-                    );
-                    setHighlightedModel(null);
-                  }}
-                  onMouseEnter={() =>
-                    setHighlightedModel(
-                      hiddenModels.includes(model) ? null : model,
-                    )
-                  }
-                  onMouseLeave={() => setHighlightedModel(null)}
-                  onFocus={() =>
-                    setHighlightedModel(
-                      hiddenModels.includes(model) ? null : model,
-                    )
-                  }
-                  onBlur={() => setHighlightedModel(null)}
-                >
-                  <span
-                    className="performance-swatch"
-                    style={{ background: colors[index % colors.length] }}
-                    aria-hidden="true"
-                  />
-                  <strong>{model}</strong>
-                  <span className="performance-values">
-                    {speed.toLocaleString('en-US', {
-                      maximumFractionDigits: 2,
-                    })}{' '}
-                    pass/min
-                    <span>·</span>
-                    {costEfficiency.toLocaleString('en-US', {
-                      maximumFractionDigits: 1,
-                    })}{' '}
-                    pass/$
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
         </>
       ) : (
         <p className="list-empty">
           No models have valid duration and cost estimates.
         </p>
       )}
+      <ul className="model-performance-legend">
+        {models.map(
+          ({ model, speed, costEfficiency, unavailableReason }, index) => (
+            <li key={model}>
+              <button
+                type="button"
+                disabled={speed === null || costEfficiency === null}
+                aria-pressed={
+                  speed === null || costEfficiency === null
+                    ? undefined
+                    : !hiddenModels.includes(model)
+                }
+                aria-label={
+                  unavailableReason
+                    ? `${model}: ${unavailableReason}`
+                    : `${hiddenModels.includes(model) ? 'Show' : 'Hide'} ${model} on chart`
+                }
+                onClick={() => {
+                  setHiddenModels((models) =>
+                    models.includes(model)
+                      ? models.filter((name) => name !== model)
+                      : [...models, model],
+                  );
+                  setHighlightedModel(null);
+                }}
+                onMouseEnter={() =>
+                  setHighlightedModel(
+                    unavailableReason || hiddenModels.includes(model)
+                      ? null
+                      : model,
+                  )
+                }
+                onMouseLeave={() => setHighlightedModel(null)}
+                onFocus={() =>
+                  setHighlightedModel(
+                    unavailableReason || hiddenModels.includes(model)
+                      ? null
+                      : model,
+                  )
+                }
+                onBlur={() => setHighlightedModel(null)}
+              >
+                <span
+                  className="performance-swatch"
+                  style={{ background: colors[index % colors.length] }}
+                  aria-hidden="true"
+                />
+                <strong>{model}</strong>
+                <span className="performance-values">
+                  {speed === null || costEfficiency === null ? (
+                    unavailableReason
+                  ) : (
+                    <>
+                      {speed.toLocaleString('en-US', {
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      pass/min
+                      <span>·</span>
+                      {costEfficiency.toLocaleString('en-US', {
+                        maximumFractionDigits: 1,
+                      })}{' '}
+                      pass/$
+                    </>
+                  )}
+                </span>
+              </button>
+            </li>
+          ),
+        )}
+      </ul>
       <div className="model-performance-note">
         <p>
           Speed = pass rate ÷ average estimated duration (minutes). Cost
@@ -251,10 +284,10 @@ export function ModelPerformanceChart({
           Cost efficiency estimates how many it can pass for every $1 spent.
           Farther right means faster; higher up means better value for money.
         </p>
-        {modelCount > points.length && (
+        {models.length > points.length && (
           <p>
-            {modelCount - points.length} of {modelCount} models omitted because
-            duration or cost estimates are unavailable.
+            {models.length - points.length} of {models.length} models cannot be
+            plotted. The legend shows why their estimates are unavailable.
           </p>
         )}
       </div>
