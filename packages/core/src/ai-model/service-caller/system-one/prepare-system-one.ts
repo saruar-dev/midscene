@@ -10,6 +10,14 @@ import { encodeDrexImages, encodeSystemOneImages } from './utils';
 const MiB = 1024 * 1024;
 const DREX_MAX_QUESTIONS = 512;
 
+// X-Nace-Client tells Nace which integration sent a request, for usage
+// attribution: midscene/<version>. It is limited to the characters the header
+// allows, in 64 at most, and carries no user data.
+function naceClientHeader() {
+  const version = getVersion().replace(/[^A-Za-z0-9 ._@+-]/g, '-');
+  return `midscene/${version}`.slice(0, 64);
+}
+
 function buildJevRequest(
   config: IModelConfig,
   request: SystemOneRequest,
@@ -57,7 +65,7 @@ function buildDrexRequest(config: IModelConfig, request: SystemOneRequest) {
       questions: request.questions,
       ...(images.length ? { images } : {}),
     },
-    headers: {},
+    headers: { 'X-Nace-Client': naceClientHeader() },
     bodyLimit: 4 * MiB,
   };
 }

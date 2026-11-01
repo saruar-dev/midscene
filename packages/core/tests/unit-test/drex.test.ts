@@ -14,6 +14,7 @@ import {
 } from '@/device';
 import { ScreenshotItem } from '@/screenshot-item';
 import type { UIContext } from '@/types';
+import { getVersion } from '@/utils';
 import { type IModelConfig, ModelConfigManager } from '@midscene/shared/env';
 import { afterEach, beforeEach, describe, expect, it, rs } from '@rstest/core';
 import sharp from 'sharp';
@@ -175,6 +176,19 @@ describe('Drex model fallback', () => {
 });
 
 describe('Drex requests', () => {
+  it('does not send X-Nace-Client to a Jev endpoint', async () => {
+    const prepared = await prepareSystemOne(
+      {
+        ...drexConfig,
+        modelName: 'jev-latest',
+        modelFamily: 'jev',
+        openaiBaseURL: 'https://api.typesafe.ai/v1',
+      },
+      { state: {}, images: {}, questions: noulQuestion },
+    );
+    expect(prepared.headers).not.toHaveProperty('X-Nace-Client');
+  });
+
   it('sends images as an ordered top-level array referenced as Image N', async () => {
     const screenshot = await image(40, 30);
     const reference = await image(20, 20, 'jpeg');
@@ -189,6 +203,12 @@ describe('Drex requests', () => {
       'Content-Type': 'application/json',
       'x-midscene-version': expect.any(String),
     });
+    const naceClient = (prepared.headers as Record<string, string>)[
+      'X-Nace-Client'
+    ];
+    expect(naceClient).toBe(`midscene/${getVersion()}`);
+    expect(naceClient).toMatch(/^midscene\/[A-Za-z0-9 ._@+-]+$/);
+    expect(naceClient.length).toBeLessThanOrEqual(64);
     expect(prepared.headers).not.toHaveProperty('TypeSafe-Danger-Zone-Images');
     const body = JSON.parse(prepared.body);
     expect(body.model).toBe('drex-max');
